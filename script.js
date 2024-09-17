@@ -1,4 +1,10 @@
-const socket = new WebSocket('ws://localhost:3000');
+const server = http.createServer(app);
+const wss = new WebSocket.Server({ server });
+
+server.listen(3000, '0.0.0.0', () => {
+  console.log('Server is listening on port 3000');
+});
+
 let playerSymbol = null;
 
 document.getElementById('createRoom').addEventListener('click', () => {
