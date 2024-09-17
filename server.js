@@ -1,26 +1,18 @@
-const http = require('http');
+onst http = require('http');
 const WebSocket = require('ws');
 const express = require('express');
 const app = express();
-
-// サーバーの作成とWebSocketのセットアップ
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ server });
 
-// ポート3000でサーバーをリッスン（外部接続も許可）
-server.listen(3000, '0.0.0.0', () => {
-  console.log('Server is listening on port 3000');
-});
+let rooms = {};  // ルームの管理
 
-// ルーム管理用
-let rooms = {};
-
-// WebSocket接続時の処理
+// クライアント接続時の処理
 wss.on('connection', (ws) => {
   let roomID = null;
   let playerSymbol = null;
 
-  // クライアントからのメッセージ受信
+  // クライアントからのメッセージを受信
   ws.on('message', (message) => {
     const data = JSON.parse(message);
 
@@ -28,7 +20,7 @@ wss.on('connection', (ws) => {
       case 'createRoom':
         roomID = generateRoomID();
         rooms[roomID] = { players: [ws], gameState: Array(9).fill(null) };
-        playerSymbol = 'O';  // ルーム作成者は "O"
+        playerSymbol = 'O';  // ルームを作ったプレイヤーは "O"
         ws.send(JSON.stringify({ type: 'roomCreated', roomID }));
         break;
 
@@ -37,7 +29,7 @@ wss.on('connection', (ws) => {
         if (rooms[roomID] && rooms[roomID].players.length < 2) {
           playerSymbol = 'X';  // 2人目のプレイヤーは "X"
           rooms[roomID].players.push(ws);
-          startGame(roomID);
+          startGame(roomID);  // ゲーム開始
         } else {
           ws.send(JSON.stringify({ type: 'error', message: 'Room is full or does not exist' }));
         }
@@ -60,7 +52,7 @@ wss.on('connection', (ws) => {
     }
   });
 
-  // クライアントが切断された時の処理
+  // クライアントが切断されたときの処理
   ws.on('close', () => {
     exitRoom(roomID, ws);
   });
@@ -86,7 +78,7 @@ function broadcastMove(roomID, index, symbol) {
   });
 }
 
-// ゲーム終了の判定
+// ゲームが終了したかどうかをチェック
 function checkGameEnd(roomID) {
   const { gameState } = rooms[roomID];
   const winningCombinations = [
@@ -95,6 +87,7 @@ function checkGameEnd(roomID) {
     [0, 4, 8], [2, 4, 6]
   ];
 
+  // 勝敗判定
   for (const [a, b, c] of winningCombinations) {
     if (gameState[a] && gameState[a] === gameState[b] && gameState[a] === gameState[c]) {
       broadcastGameEnd(roomID, gameState[a]);
@@ -102,12 +95,13 @@ function checkGameEnd(roomID) {
     }
   }
 
+  // 引き分け判定
   if (gameState.every(cell => cell !== null)) {
     broadcastGameEnd(roomID, 'draw');
   }
 }
 
-// 勝者通知
+// 勝敗の通知
 function broadcastGameEnd(roomID, result) {
   rooms[roomID].players.forEach(player => {
     player.send(JSON.stringify({ type: 'gameEnd', result }));
@@ -119,10 +113,15 @@ function exitRoom(roomID, ws) {
   if (roomID && rooms[roomID]) {
     rooms[roomID].players = rooms[roomID].players.filter(player => player !== ws);
     if (rooms[roomID].players.length === 0) {
-      delete rooms[roomID];
+      delete rooms[roomID];  // ルームを削除
     }
   }
 }
 
 // 静的ファイルを提供
 app.use(express.static('public'));
+
+// サーバーのポート
+server.listen(3000, () => {
+  console.log('Server started on port 3000');
+});
