@@ -5,12 +5,13 @@ const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+const io = new Server(server); // サーバーと連携してSocket.IOを設定
 
 let rooms = {}; // ルームの管理
 
 // 静的ファイルの提供
 app.use(express.static(path.join(__dirname, 'public')));
+
 
 // クライアントとの接続管理
 io.on('connection', (socket) => {
