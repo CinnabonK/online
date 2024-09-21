@@ -1,127 +1,91 @@
-const http = require('http');
-const WebSocket = require('ws');
 const express = require('express');
+const http = require('http');
+const { Server } = require('socket.io');
+const path = require('path');
+
 const app = express();
 const server = http.createServer(app);
-const wss = new WebSocket.Server({ server });
+const io = new Server(server);
 
-let rooms = {};  // ルームの管理
+let rooms = {}; // ルームの管理
 
-// クライアント接続時の処理
-wss.on('connection', (ws) => {
-  let roomID = null;
-  let playerSymbol = null;
+// 静的ファイルの提供
+app.use(express.static(path.join(__dirname, 'public')));
 
-  // クライアントからのメッセージを受信
-  ws.on('message', (message) => {
-    const data = JSON.parse(message);
+// クライアントとの接続管理
+io.on('connection', (socket) => {
+    console.log('A user connected');
 
-    switch (data.type) {
-      case 'createRoom':
-        roomID = generateRoomID();
-        rooms[roomID] = { players: [ws], gameState: Array(9).fill(null) };
-        playerSymbol = 'O';  // ルームを作ったプレイヤーは "O"
-        ws.send(JSON.stringify({ type: 'roomCreated', roomID }));
-        break;
-      
-      case 'joinRoom':
-        roomID = data.roomID;
-        if (rooms[roomID] && rooms[roomID].players.length < 2) {
-          playerSymbol = 'X';  // 2人目のプレイヤーは "X"
-          rooms[roomID].players.push(ws);
-          startGame(roomID);  // ゲーム開始
+    // ルーム作成処理
+    socket.on('createRoom', (roomId) => {
+        if (!rooms[roomId]) {
+            rooms[roomId] = { players: [], gameData: Array(9).fill(null) };
+            socket.join(roomId);
+            rooms[roomId].players.push(socket.id);
+            socket.emit('roomCreated', roomId);
         } else {
-          ws.send(JSON.stringify({ type: 'error', message: 'Room is full or does not exist' }));
+            socket.emit('roomExists', roomId);
         }
-        break;
+    });
 
-      case 'makeMove':
-        if (rooms[roomID]) {
-          const { gameState } = rooms[roomID];
-          if (gameState[data.index] === null) {
-            gameState[data.index] = playerSymbol;
-            broadcastMove(roomID, data.index, playerSymbol);
-            checkGameEnd(roomID);
-          }
+    // ルームに参加処理
+    socket.on('joinRoom', (roomId) => {
+        const room = rooms[roomId];
+        if (room && room.players.length < 2) {
+            socket.join(roomId);
+            room.players.push(socket.id);
+            io.to(roomId).emit('startGame', roomId);
+        } else {
+            socket.emit('roomFull', roomId);
         }
-        break;
+    });
 
-      case 'exitGame':
-        exitRoom(roomID, ws);
-        break;
-    }
-  });
+    // プレイヤーがマスをクリックしたときの処理
+    socket.on('makeMove', ({ roomId, index, player }) => {
+        const room = rooms[roomId];
+        if (room) {
+            room.gameData[index] = player;
+            io.to(roomId).emit('updateBoard', room.gameData);
 
-  // クライアントが切断されたときの処理
-  ws.on('close', () => {
-    exitRoom(roomID, ws);
-  });
+            // 勝敗判定
+            const winner = checkWinner(room.gameData);
+            if (winner) {
+                io.to(roomId).emit('gameOver', winner);
+            }
+        }
+    });
+
+    // プレイヤーが切断した場合
+    socket.on('disconnect', () => {
+        console.log('A user disconnected');
+        for (const roomId in rooms) {
+            const room = rooms[roomId];
+            room.players = room.players.filter(player => player !== socket.id);
+            if (room.players.length === 0) {
+                delete rooms[roomId]; // ルームが空になったら削除
+            }
+        }
+    });
 });
 
-// ルームIDの生成
-function generateRoomID() {
-  return Math.random().toString(36).substring(2, 9);
-}
+// 勝敗判定のロジック
+function checkWinner(board) {
+    const winPatterns = [
+        [0, 1, 2], [3, 4, 5], [6, 7, 8],
+        [0, 3, 6], [1, 4, 7], [2, 5, 8],
+        [0, 4, 8], [2, 4, 6]
+    ];
 
-// ゲーム開始時にプレイヤーに通知
-function startGame(roomID) {
-  rooms[roomID].players.forEach((player, index) => {
-    const symbol = index === 0 ? 'O' : 'X';
-    player.send(JSON.stringify({ type: 'startGame', symbol }));
-  });
-}
-
-// ゲームの状態をすべてのプレイヤーに送信
-function broadcastMove(roomID, index, symbol) {
-  rooms[roomID].players.forEach(player => {
-    player.send(JSON.stringify({ type: 'moveMade', index, symbol }));
-  });
-}
-
-// ゲームが終了したかどうかをチェック
-function checkGameEnd(roomID) {
-  const { gameState } = rooms[roomID];
-  const winningCombinations = [
-    [0, 1, 2], [3, 4, 5], [6, 7, 8],
-    [0, 3, 6], [1, 4, 7], [2, 5, 8],
-    [0, 4, 8], [2, 4, 6]
-  ];
-
-  // 勝敗判定
-  for (const [a, b, c] of winningCombinations) {
-    if (gameState[a] && gameState[a] === gameState[b] && gameState[a] === gameState[c]) {
-      broadcastGameEnd(roomID, gameState[a]);
-      return;
+    for (let pattern of winPatterns) {
+        const [a, b, c] = pattern;
+        if (board[a] && board[a] === board[b] && board[a] === board[c]) {
+            return board[a]; // 勝者を返す
+        }
     }
-  }
-
-  // 引き分け判定
-  if (gameState.every(cell => cell !== null)) {
-    broadcastGameEnd(roomID, 'draw');
-  }
+    return null;
 }
 
-// 勝敗の通知
-function broadcastGameEnd(roomID, result) {
-  rooms[roomID].players.forEach(player => {
-    player.send(JSON.stringify({ type: 'gameEnd', result }));
-  });
-}
-
-// ルームからの退出処理
-function exitRoom(roomID, ws) {
-  if (roomID && rooms[roomID]) {
-    rooms[roomID].players = rooms[roomID].players.filter(player => player !== ws);
-    if (rooms[roomID].players.length === 0) {
-      delete rooms[roomID];  // ルームを削除
-    }
-  }
-}
-
-// 静的ファイルを提供
-app.use(express.static('public'));
-
-// サーバーのポート
+// サーバーの起動
 server.listen(3000, () => {
-  console.log('Server started on port 3000');
+    console.log('Server is running on http://localhost:3000');
 });
