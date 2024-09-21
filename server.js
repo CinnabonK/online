@@ -1,3 +1,5 @@
+// server.js
+
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -5,19 +7,19 @@ const path = require('path');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server); // サーバーと連携してSocket.IOを設定
+const io = new Server(server); // サーバーとSocket.IOを接続
 
-let rooms = {}; // ルームの管理
+// ルーム情報を保存
+let rooms = {};
 
-// 静的ファイルの提供
+// 静的ファイルを提供 (publicフォルダ)
 app.use(express.static(path.join(__dirname, 'public')));
 
-
-// クライアントとの接続管理
+// Socket.IOの接続管理
 io.on('connection', (socket) => {
-    console.log('A user connected');
+    console.log('A user connected:', socket.id);
 
-    // ルーム作成処理
+    // ルーム作成
     socket.on('createRoom', (roomId) => {
         if (!rooms[roomId]) {
             rooms[roomId] = { players: [], gameData: Array(9).fill(null) };
@@ -29,7 +31,7 @@ io.on('connection', (socket) => {
         }
     });
 
-    // ルームに参加処理
+    // ルームに参加
     socket.on('joinRoom', (roomId) => {
         const room = rooms[roomId];
         if (room && room.players.length < 2) {
@@ -58,12 +60,14 @@ io.on('connection', (socket) => {
 
     // プレイヤーが切断した場合
     socket.on('disconnect', () => {
-        console.log('A user disconnected');
+        console.log('A user disconnected:', socket.id);
         for (const roomId in rooms) {
             const room = rooms[roomId];
-            room.players = room.players.filter(player => player !== socket.id);
-            if (room.players.length === 0) {
-                delete rooms[roomId]; // ルームが空になったら削除
+            if (room.players.includes(socket.id)) {
+                room.players = room.players.filter(player => player !== socket.id);
+                if (room.players.length === 0) {
+                    delete rooms[roomId]; // ルームが空なら削除
+                }
             }
         }
     });
