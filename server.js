@@ -1,4 +1,4 @@
-onst http = require('http');
+const http = require('http');
 const WebSocket = require('ws');
 const express = require('express');
 const app = express();
@@ -23,7 +23,7 @@ wss.on('connection', (ws) => {
         playerSymbol = 'O';  // ルームを作ったプレイヤーは "O"
         ws.send(JSON.stringify({ type: 'roomCreated', roomID }));
         break;
-
+      
       case 'joinRoom':
         roomID = data.roomID;
         if (rooms[roomID] && rooms[roomID].players.length < 2) {
