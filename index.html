@@ -1,36 +1,115 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>オンラインまるばつゲーム</title>
-  <link rel="stylesheet" href="style.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tic-Tac-Toe Online</title>
+    <style>
+        #board {
+            display: grid;
+            grid-template-columns: repeat(3, 100px);
+            grid-gap: 5px;
+        }
+        .cell {
+            width: 100px;
+            height: 100px;
+            background-color: #f0f0f0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2rem;
+            cursor: pointer;
+        }
+    </style>
 </head>
 <body>
-  <div id="lobby">
-    <h1>オンラインまるばつゲーム</h1>
-    <button id="createRoom">ルームを作成</button>
-    <input type="text" id="roomID" placeholder="ルームIDを入力">
-    <button id="joinRoom">ルームに参加</button>
-    <p id="errorMessage"></p>
-  </div>
-
-  <div id="game" style="display:none;">
-    <h1 id="gameStatus">あなたの番です！</h1>
-    <div id="board">
-      <div class="cell" data-index="0"></div>
-      <div class="cell" data-index="1"></div>
-      <div class="cell" data-index="2"></div>
-      <div class="cell" data-index="3"></div>
-      <div class="cell" data-index="4"></div>
-      <div class="cell" data-index="5"></div>
-      <div class="cell" data-index="6"></div>
-      <div class="cell" data-index="7"></div>
-      <div class="cell" data-index="8"></div>
+    <div id="lobby">
+        <h1>Lobby</h1>
+        <input type="text" id="roomInput" placeholder="Enter room ID">
+        <button id="createRoom">Create Room</button>
+        <button id="joinRoom">Join Room</button>
+        <div id="error"></div>
     </div>
-    <button id="exitGame">退出</button>
-  </div>
 
-  <script src="script.js"></script>
+    <div id="game" style="display:none;">
+        <h1>Tic-Tac-Toe</h1>
+        <div id="board"></div>
+        <button id="exitRoom">Exit to Lobby</button>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        const lobby = document.getElementById('lobby');
+        const game = document.getElementById('game');
+        const board = document.getElementById('board');
+        const roomInput = document.getElementById('roomInput');
+        const error = document.getElementById('error');
+        let currentPlayer = 'X';
+        let roomId = null;
+
+        document.getElementById('createRoom').addEventListener('click', () => {
+            roomId = roomInput.value;
+            socket.emit('createRoom', roomId);
+        });
+
+        document.getElementById('joinRoom').addEventListener('click', () => {
+            roomId = roomInput.value;
+            socket.emit('joinRoom', roomId);
+        });
+
+        socket.on('roomCreated', (roomId) => {
+            lobby.style.display = 'none';
+            game.style.display = 'block';
+        });
+
+        socket.on('roomExists', () => {
+            error.textContent = 'Room already exists!';
+        });
+
+        socket.on('roomFull', () => {
+            error.textContent = 'Room is full!';
+        });
+
+        socket.on('startGame', () => {
+            lobby.style.display = 'none';
+            game.style.display = 'block';
+            initializeBoard();
+        });
+
+        function initializeBoard() {
+            board.innerHTML = '';
+            for (let i = 0; i < 9; i++) {
+                const cell = document.createElement('div');
+                cell.classList.add('cell');
+                cell.dataset.index = i;
+                cell.addEventListener('click', makeMove);
+                board.appendChild(cell);
+            }
+        }
+
+        function makeMove(event) {
+            const index = event.target.dataset.index;
+            socket.emit('makeMove', { roomId, index, player: currentPlayer });
+        }
+
+        socket.on('updateBoard', (gameData) => {
+            const cells = document.querySelectorAll('.cell');
+            gameData.forEach((mark, index) => {
+                cells[index].textContent = mark;
+            });
+        });
+
+        socket.on('gameOver', (winner) => {
+            alert(`Player ${winner} wins!`);
+            socket.emit('leaveRoom', roomId);
+        });
+
+        document.getElementById('exitRoom').addEventListener('click', () => {
+            game.style.display = 'none';
+            lobby.style.display = 'block';
+            roomInput.value = '';
+        });
+    </script>
 </body>
 </html>
